@@ -48,31 +48,49 @@
     "commands": [
       {
         "command": "nexus.setGithubToken",
-        "title": "Nexus: Set GitHub Personal Access Token"
+        "title": "Nexus: Set GitHub Personal Access Token",
+        "enablement": "config.nexus.enableGithub"
       },
       {
         "command": "nexus.setGitlabToken",
-        "title": "Nexus: Set GitLab Personal Access Token"
+        "title": "Nexus: Set GitLab Personal Access Token",
+        "enablement": "config.nexus.enableGitlab"
       },
       {
         "command": "nexus.clearGithubToken",
-        "title": "Nexus: Clear GitHub Personal Access Token"
+        "title": "Nexus: Clear GitHub Personal Access Token",
+        "enablement": "config.nexus.enableGithub"
       },
       {
         "command": "nexus.clearGitlabToken",
-        "title": "Nexus: Clear GitLab Personal Access Token"
+        "title": "Nexus: Clear GitLab Personal Access Token",
+        "enablement": "config.nexus.enableGitlab"
+      },
+      {
+        "command": "nexus.selectProviders",
+        "title": "Nexus: Select Providers (GitHub / GitLab)"
       }
     ],
     "configuration": {
       "title": "Nexus",
       "properties": {
+        "nexus.enableGithub": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable the **GitHub** provider. When enabled, Nexus will fetch READMEs from the repositories listed in `#nexus.repositories#` using your GitHub Personal Access Token."
+        },
+        "nexus.enableGitlab": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable the **GitLab** provider. When enabled, Nexus will fetch READMEs from the repositories listed in `#nexus.gitlabRepositories#` using your GitLab Personal Access Token."
+        },
         "nexus.repositories": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "List of **GitHub** repositories to monitor. Format: `owner/repo` (e.g. `microsoft/vscode`)."
+          "markdownDescription": "List of **GitHub** repositories to monitor (requires `#nexus.enableGithub#`). Format: `owner/repo` — e.g. `microsoft/vscode`."
         },
         "nexus.gitlabRepositories": {
           "type": "array",
@@ -80,12 +98,12 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "List of **GitLab** repositories to monitor. Format: `namespace/project` (e.g. `gitlab-org/gitlab`)."
+          "markdownDescription": "List of **GitLab** repositories to monitor (requires `#nexus.enableGitlab#`). Format: `namespace/project` — e.g. `gitlab-org/gitlab`."
         },
         "nexus.gitlabUrl": {
           "type": "string",
           "default": "https://gitlab.com",
-          "description": "Base URL of your GitLab instance. Change this for self-hosted GitLab deployments."
+          "markdownDescription": "Base URL of your GitLab instance (requires `#nexus.enableGitlab#`). Change this for self-hosted GitLab deployments."
         },
         "nexus.cacheTimeoutSeconds": {
           "type": "number",
