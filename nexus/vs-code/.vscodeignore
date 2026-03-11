@@ -2,8 +2,7 @@
 .vscode-test/**
 src/**
 .gitignore
-.eslintrc.json
 node_modules/**
-out/maps/**
 *.map
 tsconfig.json
+esbuild.mjs
