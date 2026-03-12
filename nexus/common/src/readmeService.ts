@@ -19,6 +19,32 @@ interface CacheEntry {
     readonly fetchedAt: number;
 }
 
+export function parseRepoName(fullName: string, provider: Provider): Repository {
+    const parts = fullName.split('/');
+    const name = parts[parts.length - 1];
+    const owner = parts.slice(0, -1).join('/');
+    return { owner, name, fullName, provider };
+}
+
+export function buildReadmeQueryPrompt(results: ReadmeResult[]): string {
+    let readmeContext = '';
+    for (const r of results) {
+        const label =
+            r.repository.provider === 'github' ? 'GitHub' : 'GitLab';
+        readmeContext +=
+            `\n---\n## ${label} Repository: ${r.repository.fullName}\n\n` +
+            `${r.content}\n`;
+    }
+
+    return (
+        'You are Nexus, a helpful assistant with access to the README files of ' +
+        "the user's repositories. Answer questions based solely on the README " +
+        'content provided below. If the answer cannot be found in the READMEs, ' +
+        'say so clearly and suggest where the user might look instead.\n\n' +
+        `README content:\n${readmeContext}`
+    );
+}
+
 export class ReadmeService {
     private readonly cache = new Map<string, CacheEntry>();
 
@@ -27,9 +53,17 @@ export class ReadmeService {
         tokens: ReadmeServiceTokens,
         signal?: AbortSignal
     ): Promise<{ results: ReadmeResult[]; errors: FetchError[] }> {
+        // Evict expired cache entries
+        const now = Date.now();
+        for (const [key, entry] of this.cache) {
+            if ((now - entry.fetchedAt) / 1000 >= config.cacheTimeoutSeconds) {
+                this.cache.delete(key);
+            }
+        }
+
         const allRepos: Repository[] = [
-            ...config.githubRepos.map((r) => this.parseRepoName(r, 'github')),
-            ...config.gitlabRepos.map((r) => this.parseRepoName(r, 'gitlab')),
+            ...config.githubRepos.map((r) => parseRepoName(r, 'github')),
+            ...config.gitlabRepos.map((r) => parseRepoName(r, 'gitlab')),
         ];
 
         const results: ReadmeResult[] = [];
@@ -45,7 +79,7 @@ export class ReadmeService {
                 const cached = this.cache.get(cacheKey);
 
                 if (cached && config.cacheTimeoutSeconds > 0) {
-                    const ageSeconds = (Date.now() - cached.fetchedAt) / 1000;
+                    const ageSeconds = (now - cached.fetchedAt) / 1000;
                     if (ageSeconds < config.cacheTimeoutSeconds) {
                         results.push({
                             repository: repo,
@@ -104,6 +138,7 @@ export class ReadmeService {
                         repository: repo,
                         error:
                             err instanceof Error ? err.message : String(err),
+                        cause: err instanceof Error ? err : undefined,
                     });
                 }
             })
@@ -112,79 +147,79 @@ export class ReadmeService {
         return { results, errors };
     }
 
+    async fetchSingleReadme(
+        repoName: string,
+        provider: Provider,
+        tokens: ReadmeServiceTokens,
+        gitlabUrl: string,
+        cacheTimeoutSeconds: number,
+        signal?: AbortSignal
+    ): Promise<ReadmeResult> {
+        const repo = parseRepoName(repoName, provider);
+        const cacheKey = `${provider}:${repoName}`;
+        const cached = this.cache.get(cacheKey);
+
+        if (cached && cacheTimeoutSeconds > 0) {
+            const ageSeconds = (Date.now() - cached.fetchedAt) / 1000;
+            if (ageSeconds < cacheTimeoutSeconds) {
+                return {
+                    repository: repo,
+                    content: cached.content,
+                    fetchedAt: cached.fetchedAt,
+                };
+            }
+        }
+
+        let content: string;
+
+        if (provider === 'github') {
+            if (!tokens.githubToken) {
+                throw new Error('GitHub token not configured.');
+            }
+            content = await getGithubReadme(
+                tokens.githubToken,
+                repo.owner,
+                repo.name,
+                signal
+            );
+        } else {
+            if (!tokens.gitlabToken) {
+                throw new Error('GitLab token not configured.');
+            }
+            content = await getGitlabReadme(
+                tokens.gitlabToken,
+                gitlabUrl,
+                repo.fullName,
+                signal
+            );
+        }
+
+        const entry: CacheEntry = {
+            content,
+            fetchedAt: Date.now(),
+        };
+        this.cache.set(cacheKey, entry);
+
+        return {
+            repository: repo,
+            content,
+            fetchedAt: entry.fetchedAt,
+        };
+    }
+
     clearCache(): number {
         const count = this.cache.size;
         this.cache.clear();
         return count;
     }
 
-    parseRepoName(fullName: string, provider: Provider): Repository {
-        const parts = fullName.split('/');
-        const name = parts[parts.length - 1];
-        const owner = parts.slice(0, -1).join('/');
-        return { owner, name, fullName, provider };
-    }
-
-    validateRepoName(name: string, provider: Provider): string | undefined {
-        if (!name || name.trim().length === 0) {
-            return 'Repository name cannot be empty.';
-        }
-
-        const segments = name.split('/');
-
-        if (segments.some((s) => s === '.' || s === '..')) {
-            return 'Repository name contains invalid path segment.';
-        }
-
-        if (provider === 'github') {
-            if (segments.length !== 2) {
-                return 'GitHub repository must be in "owner/repo" format.';
-            }
-            if (segments[0].length > 39) {
-                return 'GitHub owner name exceeds 39 characters.';
-            }
-            if (segments[1].length > 100) {
-                return 'GitHub repository name exceeds 100 characters.';
-            }
-            if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(name)) {
-                return 'GitHub repository contains invalid characters.';
-            }
-        } else {
-            if (segments.length < 2) {
-                return 'GitLab project must be in "namespace/project" format.';
-            }
-            for (const segment of segments) {
-                if (segment.length === 0) {
-                    return 'GitLab project path contains empty segment.';
-                }
-                if (segment.length > 255) {
-                    return 'GitLab path component exceeds 255 characters.';
-                }
-            }
-            if (!/^[a-zA-Z0-9._/-]+$/.test(name)) {
-                return 'GitLab project path contains invalid characters.';
-            }
-        }
-
-        return undefined;
-    }
-
+    /** @deprecated Use standalone `buildReadmeQueryPrompt()` instead */
     buildSystemPrompt(results: ReadmeResult[]): string {
-        let readmeContext = '';
-        for (const r of results) {
-            const label =
-                r.repository.provider === 'github' ? 'GitHub' : 'GitLab';
-            readmeContext +=
-                `\n---\n## ${label} Repository: ${r.repository.fullName}\n\n` +
-                `${r.content}\n`;
-        }
+        return buildReadmeQueryPrompt(results);
+    }
 
-        return (
-            'You are Nexus, a helpful assistant with access to the README files of ' +
-            "the user's repositories. Answer questions based solely on the README " +
-            'content provided below. If the answer cannot be found in the READMEs, ' +
-            'say so clearly and suggest where the user might look instead.\n\n' +
-            `README content:\n${readmeContext}`
-        );
+    /** @deprecated Use standalone `parseRepoName()` instead */
+    parseRepoName(fullName: string, provider: Provider): Repository {
+        return parseRepoName(fullName, provider);
     }
 }

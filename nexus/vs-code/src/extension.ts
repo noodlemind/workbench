@@ -45,6 +45,23 @@ export function activate(context: vscode.ExtensionContext): void {
     chat.iconPath = new vscode.ThemeIcon('repo');
     context.subscriptions.push(chat);
 
+    // Save-to-file command (used by stream.button() in generate-readme and changelog)
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'nexus.saveToFile',
+            async (filePath: string, content: string) => {
+                const uri = vscode.Uri.file(filePath);
+                await vscode.workspace.fs.writeFile(
+                    uri,
+                    Buffer.from(content, 'utf-8')
+                );
+                vscode.window.showInformationMessage(
+                    `Nexus: Saved to ${vscode.workspace.asRelativePath(uri)}`
+                );
+            }
+        )
+    );
+
     // Provider selection
     context.subscriptions.push(
         vscode.commands.registerCommand(

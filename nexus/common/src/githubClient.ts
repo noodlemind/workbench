@@ -1,4 +1,5 @@
 import { httpGet, safeJsonParse } from './httpClient';
+import { AuthenticationError } from './types';
 
 export async function getGithubReadme(
     token: string,
@@ -15,10 +16,8 @@ export async function getGithubReadme(
         signal,
     });
 
-    if (result.status === 401) {
-        throw new Error(
-            'GitHub authentication failed. Please check your Personal Access Token.'
-        );
+    if (result.status === 401 || result.status === 403) {
+        throw new AuthenticationError('github', result.status);
     }
     if (result.status === 404) {
         throw new Error(
@@ -39,7 +38,5 @@ export async function getGithubReadme(
         throw new Error(`Unexpected README format for ${owner}/${repo}.`);
     }
 
-    return Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString(
-        'utf-8'
-    );
+    return Buffer.from(data.content, 'base64').toString('utf-8');
 }

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from './setup';
 import { getGithubReadme } from '../src/githubClient';
+import { AuthenticationError } from '../src/types';
 
 describe('getGithubReadme', () => {
     it('decodes base64 README content', async () => {
@@ -23,7 +24,7 @@ describe('getGithubReadme', () => {
         expect(content).toBe('# Hello from GitHub');
     });
 
-    it('throws on authentication failure', async () => {
+    it('throws AuthenticationError on 401', async () => {
         server.use(
             http.get(
                 'https://api.github.com/repos/owner/repo/readme',
@@ -33,7 +34,21 @@ describe('getGithubReadme', () => {
 
         await expect(
             getGithubReadme('bad-token', 'owner', 'repo')
-        ).rejects.toThrow('authentication failed');
+        ).rejects.toBeInstanceOf(AuthenticationError);
+    });
+
+    it('throws AuthenticationError on 403', async () => {
+        server.use(
+            http.get(
+                'https://api.github.com/repos/owner/repo/readme',
+                () => new HttpResponse(null, { status: 403 })
+            )
+        );
+
+        const err = await getGithubReadme('bad-token', 'owner', 'repo')
+            .catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(AuthenticationError);
+        expect((err as AuthenticationError).message).toContain('lacks required scope');
     });
 
     it('throws on 404', async () => {

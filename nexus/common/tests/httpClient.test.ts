@@ -11,7 +11,7 @@ describe('httpGet', () => {
                     'Bearer my-token'
                 );
                 expect(request.headers.get('User-Agent')).toBe(
-                    'VSCode-Nexus-Extension'
+                    'Nexus-Extension'
                 );
                 return HttpResponse.text('ok');
             })

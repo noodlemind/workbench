@@ -16,4 +16,23 @@ export interface ReadmeResult {
 export interface FetchError {
     readonly repository: Repository;
     readonly error: string;
+    readonly cause?: Error;
+}
+
+export class AuthenticationError extends Error {
+    readonly name = 'AuthenticationError' as const;
+
+    constructor(
+        readonly provider: Provider,
+        readonly statusCode: number,
+    ) {
+        const action = statusCode === 403
+            ? 'lacks required scope'
+            : 'is expired or invalid';
+        super(`${provider === 'github' ? 'GitHub' : 'GitLab'} authentication failed — your token ${action}.`);
+    }
+}
+
+export function isAuthenticationError(err: unknown): err is AuthenticationError {
+    return err instanceof Error && err.name === 'AuthenticationError';
 }

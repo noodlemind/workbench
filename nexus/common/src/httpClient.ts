@@ -6,6 +6,7 @@ export interface HttpRequestOptions {
     readonly headers?: Readonly<Record<string, string>>;
     readonly timeoutMs?: number;
     readonly signal?: AbortSignal;
+    readonly userAgent?: string;
 }
 
 export interface HttpResponse {
@@ -20,7 +21,7 @@ export async function httpGet(opts: HttpRequestOptions): Promise<HttpResponse> {
     }
 
     const headers: Record<string, string> = {
-        'User-Agent': 'VSCode-Nexus-Extension',
+        'User-Agent': opts.userAgent ?? 'Nexus-Extension',
         ...opts.headers,
     };
 

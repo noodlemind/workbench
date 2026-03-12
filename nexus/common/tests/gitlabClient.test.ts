@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from './setup';
 import { getGitlabReadme } from '../src/gitlabClient';
+import { AuthenticationError } from '../src/types';
 
 const GITLAB_URL = 'https://gitlab.example.com';
 const PROJECT = 'group/project';
@@ -47,14 +48,25 @@ describe('getGitlabReadme', () => {
         expect(content).toBe('# Lowercase readme');
     });
 
-    it('throws on authentication failure', async () => {
+    it('throws AuthenticationError on 401', async () => {
         server.use(
             http.get(FILES_PATTERN, () => new HttpResponse(null, { status: 401 }))
         );
 
         await expect(
             getGitlabReadme('bad-token', GITLAB_URL, PROJECT)
-        ).rejects.toThrow('authentication failed');
+        ).rejects.toBeInstanceOf(AuthenticationError);
+    });
+
+    it('throws AuthenticationError on 403', async () => {
+        server.use(
+            http.get(FILES_PATTERN, () => new HttpResponse(null, { status: 403 }))
+        );
+
+        const err = await getGitlabReadme('bad-token', GITLAB_URL, PROJECT)
+            .catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(AuthenticationError);
+        expect((err as AuthenticationError).message).toContain('lacks required scope');
     });
 
     it('throws when no README found', async () => {

@@ -1,4 +1,5 @@
 import { httpGet } from './httpClient';
+import { AuthenticationError } from './types';
 
 const README_FILENAMES = [
     'README.md',
@@ -25,10 +26,8 @@ export async function getGitlabReadme(
             signal,
         });
 
-        if (result.status === 401) {
-            throw new Error(
-                'GitLab authentication failed. Please check your Personal Access Token.'
-            );
+        if (result.status === 401 || result.status === 403) {
+            throw new AuthenticationError('gitlab', result.status);
         }
 
         if (result.status === 200) {

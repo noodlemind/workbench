@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import {
     ReadmeService,
-    getGitlabReadme,
-    getGithubReadme,
+    buildReadmeQueryPrompt,
+    isAuthenticationError,
     type ReadmeServiceConfig,
     type ReadmeServiceTokens,
 } from '@nexus/common';
@@ -45,14 +45,54 @@ export class NexusParticipant {
                     );
                 case 'refresh':
                     return this.handleRefresh(stream);
+                case 'help':
+                    return this.handleHelp(stream);
+                case 'generate-readme':
+                    return await this.handleGenerateReadme(request, stream, token);
+                case 'changelog':
+                    return await this.handleChangelog(request, stream, token);
                 default:
                     return await this.handleQuery(request, stream, token);
             }
         } catch (err) {
+            if (isAuthenticationError(err)) {
+                stream.markdown(`**Authentication Error:** ${err.message}`);
+                const commandId = err.provider === 'gitlab' ? 'nexus.setGitlabToken' : 'nexus.setGithubToken';
+                const label = err.provider === 'gitlab' ? 'Update GitLab Token' : 'Update GitHub Token';
+                stream.button({ command: commandId, title: label });
+                return { errorDetails: { message: err.message } };
+            }
             const message = err instanceof Error ? err.message : String(err);
             stream.markdown(`**Error:** ${message}`);
             return { errorDetails: { message } };
         }
+    }
+
+    private handleHelp(
+        stream: vscode.ChatResponseStream
+    ): vscode.ChatResult {
+        const config = this.readConfig();
+        stream.markdown([
+            '## Nexus Commands',
+            '',
+            '| Command | Description |',
+            '|---------|-------------|',
+            '| `@nexus <question>` | Ask a question about your configured repos |',
+            '| `@nexus /list` | List all configured repositories |',
+            '| `@nexus /readme owner/repo` | Show a specific README |',
+            '| `@nexus /refresh` | Clear the README cache |',
+            '| `@nexus /help` | Show this help message |',
+            '| `@nexus /generate-readme` | Generate README for the open workspace |',
+            '| `@nexus /changelog` | Generate changelog from branch diff |',
+            '',
+            '## Current Settings',
+            '',
+            `- **GitHub**: ${config.enableGithub ? 'enabled' : 'disabled'} (${config.githubRepos.length} repos)`,
+            `- **GitLab**: ${config.enableGitlab ? 'enabled' : 'disabled'} (${config.gitlabRepos.length} repos)`,
+            `- **GitLab URL**: \`${config.gitlabUrl}\``,
+            `- **Cache timeout**: ${config.cacheTimeoutSeconds}s`,
+        ].join('\n'));
+        return {};
     }
 
     private handleList(
@@ -119,7 +159,7 @@ export class NexusParticipant {
             return {};
         }
 
-        const { enableGithub, enableGitlab, gitlabRepos, gitlabUrl } =
+        const { enableGithub, enableGitlab, gitlabRepos, gitlabUrl, cacheTimeoutSeconds } =
             this.readConfig();
 
         const isGitlab = gitlabRepos.includes(repoArg);
@@ -148,50 +188,23 @@ export class NexusParticipant {
             return {};
         }
 
+        const provider = isGitlab ? 'gitlab' as const : 'github' as const;
+        const tokens: ReadmeServiceTokens = {
+            githubToken: await this.context.secrets.get('nexus.githubToken'),
+            gitlabToken: await this.context.secrets.get('nexus.gitlabToken'),
+        };
+
         const { signal, dispose } = toAbortSignal(cancellationToken);
         try {
-            if (isGitlab) {
-                const gitlabToken = await this.context.secrets.get(
-                    'nexus.gitlabToken'
-                );
-                if (!gitlabToken) {
-                    stream.markdown(
-                        'GitLab token not set.\n\n' +
-                            'Run **Nexus: Set GitLab Personal Access Token** from the Command Palette.'
-                    );
-                    return {};
-                }
-                const content = await getGitlabReadme(
-                    gitlabToken,
-                    gitlabUrl,
-                    repoArg,
-                    signal
-                );
-                stream.markdown(`## README: \`${repoArg}\`\n\n${content}`);
-            } else {
-                const githubToken = await this.context.secrets.get(
-                    'nexus.githubToken'
-                );
-                if (!githubToken) {
-                    stream.markdown(
-                        'GitHub token not set.\n\n' +
-                            'Run **Nexus: Set GitHub Personal Access Token** from the Command Palette.'
-                    );
-                    return {};
-                }
-                const [owner, ...rest] = repoArg.split('/');
-                const repo = rest.join('/');
-                const content = await getGithubReadme(
-                    githubToken,
-                    owner,
-                    repo,
-                    signal
-                );
-                stream.markdown(`## README: \`${repoArg}\`\n\n${content}`);
-            }
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            stream.markdown(`Failed to fetch README: ${message}`);
+            const result = await this.readmeService.fetchSingleReadme(
+                repoArg,
+                provider,
+                tokens,
+                gitlabUrl,
+                cacheTimeoutSeconds,
+                signal
+            );
+            stream.markdown(`## README: \`${repoArg}\`\n\n${result.content}`);
         } finally {
             dispose();
         }
@@ -223,7 +236,7 @@ export class NexusParticipant {
             return {};
         }
 
-        const config: import('@nexus/common').ReadmeServiceConfig = {
+        const config: ReadmeServiceConfig = {
             githubRepos: enableGithub ? fullConfig.githubRepos : [],
             gitlabRepos: enableGitlab ? fullConfig.gitlabRepos : [],
             gitlabUrl: fullConfig.gitlabUrl,
@@ -240,7 +253,7 @@ export class NexusParticipant {
 
         stream.progress('Fetching README files…');
 
-        const tokens: import('@nexus/common').ReadmeServiceTokens = {
+        const tokens: ReadmeServiceTokens = {
             githubToken: await this.context.secrets.get('nexus.githubToken'),
             gitlabToken: await this.context.secrets.get('nexus.gitlabToken'),
         };
@@ -259,6 +272,7 @@ export class NexusParticipant {
                 for (const e of errors) {
                     msg += `- **${e.repository.fullName}** _(${e.repository.provider})_: ${e.error}\n`;
                 }
+                this.renderAuthButtons(errors, stream);
                 stream.markdown(msg);
                 return {};
             }
@@ -270,10 +284,10 @@ export class NexusParticipant {
                     warning += `> - **${e.repository.fullName}** _(${e.repository.provider})_: ${e.error}\n`;
                 }
                 stream.markdown(warning + '\n');
+                this.renderAuthButtons(errors, stream);
             }
 
-            const systemPrompt =
-                this.readmeService.buildSystemPrompt(results);
+            const systemPrompt = buildReadmeQueryPrompt(results);
 
             const messages = [
                 vscode.LanguageModelChatMessage.User(systemPrompt),
@@ -293,6 +307,172 @@ export class NexusParticipant {
         }
 
         return {};
+    }
+
+    private async handleGenerateReadme(
+        request: vscode.ChatRequest,
+        stream: vscode.ChatResponseStream,
+        cancellationToken: vscode.CancellationToken
+    ): Promise<vscode.ChatResult> {
+        const { gatherWorkspaceContext } = await import('./workspaceContext');
+        const { buildReadmeGenerationPrompt } = await import('@nexus/common');
+
+        const context = await gatherWorkspaceContext();
+        if (!context) {
+            stream.markdown('**No workspace folder is open.** Open a folder or workspace first.');
+            return {};
+        }
+
+        stream.progress('Analyzing workspace…');
+
+        const prompt = buildReadmeGenerationPrompt({
+            fileTree: context.fileTree,
+            packageJson: context.packageJson,
+            existingReadme: context.existingReadme,
+            keyFiles: context.keyFiles,
+        });
+
+        const messages = [
+            vscode.LanguageModelChatMessage.User(prompt),
+        ];
+
+        if (request.prompt.trim()) {
+            messages.push(
+                vscode.LanguageModelChatMessage.User(
+                    `Additional instructions: ${request.prompt.trim()}`
+                )
+            );
+        }
+
+        let generatedContent = '';
+        const llmResponse = await request.model.sendRequest(
+            messages,
+            {},
+            cancellationToken
+        );
+        for await (const chunk of llmResponse.text) {
+            generatedContent += chunk;
+            stream.markdown(chunk);
+        }
+
+        const readmePath = vscode.Uri.joinPath(
+            vscode.Uri.file(context.rootPath),
+            'README.md'
+        );
+        stream.button({
+            command: 'nexus.saveToFile',
+            title: 'Save to README.md',
+            arguments: [readmePath.fsPath, generatedContent],
+        });
+
+        return {};
+    }
+
+    private async handleChangelog(
+        request: vscode.ChatRequest,
+        stream: vscode.ChatResponseStream,
+        cancellationToken: vscode.CancellationToken
+    ): Promise<vscode.ChatResult> {
+        const { getBranchDiff } = await import('./gitContext');
+        const { buildChangelogPrompt } = await import('@nexus/common');
+
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0) {
+            stream.markdown('**No workspace folder is open.** Open a folder or workspace first.');
+            return {};
+        }
+
+        let rootUri: vscode.Uri;
+        if (folders.length > 1) {
+            const pick = await vscode.window.showQuickPick(
+                folders.map((f) => ({ label: f.name, uri: f.uri })),
+                { placeHolder: 'Select workspace folder for changelog' }
+            );
+            if (!pick) return {};
+            rootUri = pick.uri;
+        } else {
+            rootUri = folders[0].uri;
+        }
+
+        stream.progress('Analyzing branch diff…');
+
+        const cfg = vscode.workspace.getConfiguration('nexus');
+        const baseBranch = cfg.get<string>('baseBranch', 'main');
+
+        const { signal, dispose } = toAbortSignal(cancellationToken);
+        try {
+            const diff = await getBranchDiff(rootUri.fsPath, baseBranch, signal);
+
+            // Read existing CHANGELOG.md if present
+            let existingChangelog: string | undefined;
+            try {
+                const changelogUri = vscode.Uri.joinPath(rootUri, 'CHANGELOG.md');
+                const content = await vscode.workspace.fs.readFile(changelogUri);
+                existingChangelog = Buffer.from(content).toString('utf-8');
+            } catch {
+                // No existing CHANGELOG
+            }
+
+            const prompt = buildChangelogPrompt({
+                currentBranch: diff.currentBranch,
+                baseBranch: diff.baseBranch,
+                commitLog: diff.commitLog,
+                diffStat: diff.diffStat,
+                diffContent: diff.diffContent,
+                existingChangelog,
+            });
+
+            const messages = [
+                vscode.LanguageModelChatMessage.User(prompt),
+            ];
+
+            if (request.prompt.trim()) {
+                messages.push(
+                    vscode.LanguageModelChatMessage.User(
+                        `Additional instructions: ${request.prompt.trim()}`
+                    )
+                );
+            }
+
+            let generatedContent = '';
+            const llmResponse = await request.model.sendRequest(
+                messages,
+                {},
+                cancellationToken
+            );
+            for await (const chunk of llmResponse.text) {
+                generatedContent += chunk;
+                stream.markdown(chunk);
+            }
+
+            const changelogPath = vscode.Uri.joinPath(rootUri, 'CHANGELOG.md');
+            stream.button({
+                command: 'nexus.saveToFile',
+                title: 'Save to CHANGELOG.md',
+                arguments: [changelogPath.fsPath, generatedContent],
+            });
+        } finally {
+            dispose();
+        }
+
+        return {};
+    }
+
+    private renderAuthButtons(
+        errors: ReadonlyArray<{ cause?: Error }>,
+        stream: vscode.ChatResponseStream,
+    ): void {
+        const providers = new Set<string>();
+        for (const e of errors) {
+            if (isAuthenticationError(e.cause)) {
+                providers.add(e.cause.provider);
+            }
+        }
+        for (const provider of providers) {
+            const commandId = provider === 'gitlab' ? 'nexus.setGitlabToken' : 'nexus.setGithubToken';
+            const label = provider === 'gitlab' ? 'Update GitLab Token' : 'Update GitHub Token';
+            stream.button({ command: commandId, title: label });
+        }
     }
 
     private readConfig(): {
@@ -350,6 +530,9 @@ export class NexusParticipant {
             '- `@nexus /list` — list configured repositories',
             '- `@nexus /readme owner/repo` — display a specific README',
             '- `@nexus /refresh` — clear the README cache',
+            '- `@nexus /help` — show available commands and settings',
+            '- `@nexus /generate-readme` — generate a README for your workspace',
+            '- `@nexus /changelog` — generate changelog from branch diff',
         ].join('\n');
     }
 }

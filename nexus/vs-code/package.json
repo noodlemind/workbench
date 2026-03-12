@@ -41,6 +41,18 @@
           {
             "name": "refresh",
             "description": "Clear the README cache and fetch fresh content on the next query"
+          },
+          {
+            "name": "help",
+            "description": "Show available commands and current settings"
+          },
+          {
+            "name": "generate-readme",
+            "description": "Analyze the open workspace and generate a README.md"
+          },
+          {
+            "name": "changelog",
+            "description": "Generate changelog entries from current branch diff"
           }
         ]
       }
@@ -69,6 +81,10 @@
       {
         "command": "nexus.selectProviders",
         "title": "Nexus: Select Providers (GitHub / GitLab)"
+      },
+      {
+        "command": "nexus.saveToFile",
+        "title": "Nexus: Save Generated Content to File"
       }
     ],
     "configuration": {
@@ -111,6 +127,12 @@
           "default": 300,
           "minimum": 0,
           "markdownDescription": "How long (in seconds) to cache README content before re-fetching. Set to `0` to always fetch fresh content."
+        },
+        "nexus.baseBranch": {
+          "type": "string",
+          "default": "main",
+          "scope": "application",
+          "markdownDescription": "Base branch for **changelog** generation. The `/changelog` command compares the current branch against this branch. Falls back to auto-detecting `main` or `master` if not found."
         }
       }
     }
