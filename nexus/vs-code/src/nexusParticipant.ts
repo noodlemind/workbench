@@ -22,6 +22,8 @@ function toAbortSignal(
     };
 }
 
+const MAX_EXISTING_CHANGELOG_LENGTH = 10 * 1024;
+
 export class NexusParticipant {
     private readonly readmeService = new ReadmeService();
 
@@ -408,7 +410,12 @@ export class NexusParticipant {
             try {
                 const changelogUri = vscode.Uri.joinPath(rootUri, 'CHANGELOG.md');
                 const content = await vscode.workspace.fs.readFile(changelogUri);
-                existingChangelog = Buffer.from(content).toString('utf-8');
+                const text = Buffer.from(content).toString('utf-8');
+                existingChangelog =
+                    text.length > MAX_EXISTING_CHANGELOG_LENGTH
+                        ? text.slice(0, MAX_EXISTING_CHANGELOG_LENGTH) +
+                          '\n... (truncated)'
+                        : text;
             } catch {
                 // No existing CHANGELOG
             }

@@ -26,13 +26,28 @@ function truncate(text: string, maxLength: number): string {
     return text.slice(0, maxLength) + '\n... (truncated)';
 }
 
+async function refExists(
+    cwd: string,
+    ref: string,
+    signal?: AbortSignal,
+): Promise<boolean> {
+    try {
+        await exec('git', ['rev-parse', '--verify', ref], {
+            cwd,
+            maxBuffer: 1024 * 1024,
+            signal,
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 async function detectBaseBranch(
     cwd: string,
     configuredBranch: string,
     signal?: AbortSignal,
 ): Promise<string> {
-    const opts = { cwd, maxBuffer: 1024 * 1024, signal };
-
     // Validate configured branch (prevent git flag injection)
     if (configuredBranch.startsWith('-')) {
         throw new GitContextError(
@@ -41,27 +56,23 @@ async function detectBaseBranch(
         );
     }
 
-    // Check if configured branch exists
-    try {
-        await exec('git', ['rev-parse', '--verify', configuredBranch], opts);
-        return configuredBranch;
-    } catch {
-        // Configured branch doesn't exist, try fallbacks
-    }
+    const candidates = [
+        configuredBranch,
+        `origin/${configuredBranch}`,
+        'main',
+        'origin/main',
+        'master',
+        'origin/master',
+    ];
 
-    // Try common defaults
-    for (const candidate of ['main', 'master']) {
-        if (candidate === configuredBranch) continue;
-        try {
-            await exec('git', ['rev-parse', '--verify', candidate], opts);
+    for (const candidate of candidates) {
+        if (await refExists(cwd, candidate, signal)) {
             return candidate;
-        } catch {
-            // Try next
         }
     }
 
     throw new GitContextError(
-        `Could not find base branch "${configuredBranch}" or common defaults (main, master). ` +
+        `Could not find base branch "${configuredBranch}" or common defaults (main, master), locally or on origin. ` +
         'Set `nexus.baseBranch` in your settings to specify your base branch.',
         'unknown',
     );
@@ -107,7 +118,10 @@ export async function getBranchDiff(
     const baseBranch = await detectBaseBranch(workspacePath, configuredBaseBranch, signal);
 
     // Check if on base branch
-    if (branchOutput === baseBranch) {
+    if (
+        branchOutput === baseBranch ||
+        baseBranch === `origin/${branchOutput}`
+    ) {
         throw new GitContextError(
             `You are on the base branch (\`${baseBranch}\`). Switch to a feature branch to generate a changelog.`,
             'on-base-branch',
@@ -116,11 +130,12 @@ export async function getBranchDiff(
 
     // Parallelize independent git calls
     let logResult, statResult, diffResult;
+    const diffRange = `${baseBranch}...HEAD`;
     try {
         [logResult, statResult, diffResult] = await Promise.all([
             exec('git', ['log', '--oneline', `${baseBranch}..HEAD`], opts),
-            exec('git', ['diff', '--stat', `${baseBranch}..HEAD`], opts),
-            exec('git', ['diff', `${baseBranch}..HEAD`, '--', '.', ':!package-lock.json', ':!yarn.lock', ':!pnpm-lock.yaml'], opts),
+            exec('git', ['diff', '--stat', diffRange], opts),
+            exec('git', ['diff', diffRange, '--', '.', ':!package-lock.json', ':!yarn.lock', ':!pnpm-lock.yaml'], opts),
         ]);
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

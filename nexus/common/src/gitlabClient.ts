@@ -33,6 +33,14 @@ export async function getGitlabReadme(
         if (result.status === 200) {
             return result.body;
         }
+
+        if (result.status === 404) {
+            continue;
+        }
+
+        throw new Error(
+            `GitLab API returned status ${result.status} for ${projectPath}.`
+        );
     }
 
     throw new Error(`No README found for GitLab project "${projectPath}".`);

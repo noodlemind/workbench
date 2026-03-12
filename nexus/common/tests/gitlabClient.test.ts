@@ -79,6 +79,16 @@ describe('getGitlabReadme', () => {
         ).rejects.toThrow('No README found');
     });
 
+    it('surfaces non-404 API errors', async () => {
+        server.use(
+            http.get(FILES_PATTERN, () => new HttpResponse(null, { status: 500 }))
+        );
+
+        await expect(
+            getGitlabReadme('gl-token', GITLAB_URL, PROJECT)
+        ).rejects.toThrow('status 500');
+    });
+
     it('passes abort signal to httpGet', async () => {
         const controller = new AbortController();
         controller.abort();
