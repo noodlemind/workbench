@@ -30,6 +30,7 @@ export class AuthenticationError extends Error {
             ? 'lacks required scope'
             : 'is expired or invalid';
         super(`${provider === 'github' ? 'GitHub' : 'GitLab'} authentication failed — your token ${action}.`);
+        Object.setPrototypeOf(this, AuthenticationError.prototype);
     }
 }
 

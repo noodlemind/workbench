@@ -115,11 +115,17 @@ export async function getBranchDiff(
     }
 
     // Parallelize independent git calls
-    const [logResult, statResult, diffResult] = await Promise.all([
-        exec('git', ['log', '--oneline', `${baseBranch}..HEAD`], opts),
-        exec('git', ['diff', '--stat', `${baseBranch}..HEAD`], opts),
-        exec('git', ['diff', `${baseBranch}..HEAD`, '--', '.', ':!package-lock.json', ':!yarn.lock', ':!pnpm-lock.yaml'], opts),
-    ]);
+    let logResult, statResult, diffResult;
+    try {
+        [logResult, statResult, diffResult] = await Promise.all([
+            exec('git', ['log', '--oneline', `${baseBranch}..HEAD`], opts),
+            exec('git', ['diff', '--stat', `${baseBranch}..HEAD`], opts),
+            exec('git', ['diff', `${baseBranch}..HEAD`, '--', '.', ':!package-lock.json', ':!yarn.lock', ':!pnpm-lock.yaml'], opts),
+        ]);
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new GitContextError(`Failed to read git history: ${msg}`, 'unknown');
+    }
 
     return {
         currentBranch: branchOutput,

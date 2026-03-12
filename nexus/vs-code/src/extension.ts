@@ -51,13 +51,16 @@ export function activate(context: vscode.ExtensionContext): void {
             'nexus.saveToFile',
             async (filePath: string, content: string) => {
                 const uri = vscode.Uri.file(filePath);
-                await vscode.workspace.fs.writeFile(
-                    uri,
-                    Buffer.from(content, 'utf-8')
-                );
+                const edit = new vscode.WorkspaceEdit();
+                edit.createFile(uri, {
+                    overwrite: true,
+                    contents: Buffer.from(content, 'utf-8'),
+                });
+                await vscode.workspace.applyEdit(edit);
                 vscode.window.showInformationMessage(
                     `Nexus: Saved to ${vscode.workspace.asRelativePath(uri)}`
                 );
+                await vscode.window.showTextDocument(uri);
             }
         )
     );
