@@ -1,0 +1,20 @@
+{
+  "name": "@nexus/common",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "node": ">=20.3.0"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "msw": "^2.12.0",
+    "typescript": "^5.4.0",
+    "vitest": "^4.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

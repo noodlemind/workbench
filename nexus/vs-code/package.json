@@ -1,0 +1,155 @@
+{
+  "name": "nexus",
+  "displayName": "Nexus - Repository README Agent",
+  "description": "A GitHub Copilot Chat agent that reads your GitHub and GitLab repository READMEs to provide up-to-date information",
+  "version": "0.0.1",
+  "publisher": "noodlemind",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "github copilot",
+    "chat",
+    "readme",
+    "github",
+    "gitlab",
+    "agent"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "nexus.agent",
+        "fullName": "Nexus Repository Agent",
+        "name": "nexus",
+        "description": "Answers questions about your GitHub and GitLab repositories based on their README files",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "list",
+            "description": "List all configured repositories"
+          },
+          {
+            "name": "readme",
+            "description": "Show the README for a specific repository (e.g. /readme owner/repo)"
+          },
+          {
+            "name": "refresh",
+            "description": "Clear the README cache and fetch fresh content on the next query"
+          },
+          {
+            "name": "help",
+            "description": "Show available commands and current settings"
+          },
+          {
+            "name": "generate-readme",
+            "description": "Analyze the open workspace and generate a README.md"
+          },
+          {
+            "name": "changelog",
+            "description": "Generate changelog entries from current branch diff"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "nexus.setGithubToken",
+        "title": "Nexus: Set GitHub Personal Access Token",
+        "enablement": "config.nexus.enableGithub"
+      },
+      {
+        "command": "nexus.setGitlabToken",
+        "title": "Nexus: Set GitLab Personal Access Token",
+        "enablement": "config.nexus.enableGitlab"
+      },
+      {
+        "command": "nexus.clearGithubToken",
+        "title": "Nexus: Clear GitHub Personal Access Token",
+        "enablement": "config.nexus.enableGithub"
+      },
+      {
+        "command": "nexus.clearGitlabToken",
+        "title": "Nexus: Clear GitLab Personal Access Token",
+        "enablement": "config.nexus.enableGitlab"
+      },
+      {
+        "command": "nexus.selectProviders",
+        "title": "Nexus: Select Providers (GitHub / GitLab)"
+      },
+      {
+        "command": "nexus.saveToFile",
+        "title": "Nexus: Save Generated Content to File"
+      }
+    ],
+    "configuration": {
+      "title": "Nexus",
+      "properties": {
+        "nexus.enableGithub": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable the **GitHub** provider. When enabled, Nexus will fetch READMEs from the repositories listed in `#nexus.repositories#` using your GitHub Personal Access Token."
+        },
+        "nexus.enableGitlab": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable the **GitLab** provider. When enabled, Nexus will fetch READMEs from the repositories listed in `#nexus.gitlabRepositories#` using your GitLab Personal Access Token."
+        },
+        "nexus.repositories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "List of **GitHub** repositories to monitor (requires `#nexus.enableGithub#`). Format: `owner/repo` — e.g. `microsoft/vscode`."
+        },
+        "nexus.gitlabRepositories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "List of **GitLab** repositories to monitor (requires `#nexus.enableGitlab#`). Format: `namespace/project` — e.g. `gitlab-org/gitlab`."
+        },
+        "nexus.gitlabUrl": {
+          "type": "string",
+          "default": "https://gitlab.com",
+          "scope": "application",
+          "markdownDescription": "Base URL of your GitLab instance (requires `#nexus.enableGitlab#`). Change this for self-hosted GitLab deployments."
+        },
+        "nexus.cacheTimeoutSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "markdownDescription": "How long (in seconds) to cache README content before re-fetching. Set to `0` to always fetch fresh content."
+        },
+        "nexus.baseBranch": {
+          "type": "string",
+          "default": "main",
+          "scope": "application",
+          "markdownDescription": "Base branch for **changelog** generation. The `/changelog` command compares the current branch against this branch. Falls back to auto-detecting `main` or `master` if not found."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "package": "node esbuild.mjs --production && vsce package --no-dependencies",
+    "lint": "eslint src --ext .ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.27.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@nexus/common": "*"
+  }
+}

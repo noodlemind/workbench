@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "workspaces": [
+    "common",
+    "vs-code"
+  ],
+  "scripts": {
+    "build": "tsc --build vs-code/tsconfig.json && cd vs-code && node esbuild.mjs",
+    "build:production": "tsc --build vs-code/tsconfig.json && cd vs-code && node esbuild.mjs --production",
+    "watch": "cd vs-code && node esbuild.mjs --watch",
+    "test": "npm test --workspaces --if-present",
+    "clean": "rm -rf common/dist vs-code/out common/tsconfig.tsbuildinfo vs-code/tsconfig.tsbuildinfo"
+  }
+}
